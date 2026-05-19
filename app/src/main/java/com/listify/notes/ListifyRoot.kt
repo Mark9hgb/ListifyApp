@@ -366,6 +366,7 @@ private fun SettingsScreen(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun NoteEditor(note: Note, onBack: () -> Unit, onSave: (Note) -> Unit, onTrash: () -> Unit) {
     var title by remember(note.id) { mutableStateOf(note.title) }
     var body by remember(note.id) { mutableStateOf(note.body) }
