@@ -79,27 +79,42 @@ fun ListifyRoot() {
     val repository = remember { NoteRepository(context.applicationContext) }
     val notes by repository.notes.collectAsState()
     var destination by remember { mutableStateOf(ListifyDestination.Notes) }
-    var editingNote by remember { mutableStateOf<Note?>(null) }
+    var openedNote by remember { mutableStateOf<Note?>(null) }
+    var isEditing by remember { mutableStateOf(false) }
     var backupText by remember { mutableStateOf("") }
 
     LaunchedEffect(repository) {
         repository.seedIfEmpty()
     }
 
-    editingNote?.let { note ->
-        NoteEditor(
-            note = note,
-            onBack = { editingNote = null },
-            onSave = {
-                repository.saveNote(it)
-                editingNote = null
-                Toast.makeText(context, "Saved", Toast.LENGTH_SHORT).show()
-            },
-            onTrash = {
-                repository.moveToTrash(note.id)
-                editingNote = null
-            }
-        )
+    openedNote?.let { note ->
+        if (isEditing) {
+            NoteEditor(
+                note = note,
+                onBack = { isEditing = false },
+                onSave = {
+                    repository.saveNote(it)
+                    openedNote = it
+                    isEditing = false
+                    Toast.makeText(context, "Saved", Toast.LENGTH_SHORT).show()
+                },
+                onTrash = {
+                    repository.moveToTrash(note.id)
+                    openedNote = null
+                    isEditing = false
+                }
+            )
+        } else {
+            NoteReader(
+                note = notes.firstOrNull { it.id == note.id } ?: note,
+                onBack = { openedNote = null },
+                onEdit = { isEditing = true },
+                onTrash = {
+                    repository.moveToTrash(note.id)
+                    openedNote = null
+                }
+            )
+        }
         return
     }
 
@@ -128,7 +143,12 @@ fun ListifyRoot() {
         },
         floatingActionButton = {
             if (destination == ListifyDestination.Notes) {
-                FloatingActionButton(onClick = { editingNote = repository.createNote() }) {
+                FloatingActionButton(
+                    onClick = {
+                        openedNote = repository.createNote()
+                        isEditing = false
+                    }
+                ) {
                     Icon(Icons.Default.Add, contentDescription = "New note")
                 }
             }
@@ -143,17 +163,17 @@ fun ListifyRoot() {
             when (destination) {
                 ListifyDestination.Notes -> NotesScreen(
                     notes = notes.filterNot { it.isTrashed || it.isArchived },
-                    onEdit = { editingNote = it },
+                    onOpen = { openedNote = it },
                     onPin = { repository.togglePinned(it.id) },
                     onArchive = { repository.toggleArchived(it.id) },
                     onTrash = { repository.moveToTrash(it.id) }
                 )
 
-                ListifyDestination.Folders -> FoldersScreen(notes = notes.filterNot { it.isTrashed }, onEdit = { editingNote = it })
-                ListifyDestination.Search -> SearchScreen(notes = notes.filterNot { it.isTrashed }, onEdit = { editingNote = it })
+                ListifyDestination.Folders -> FoldersScreen(notes = notes.filterNot { it.isTrashed }, onOpen = { openedNote = it })
+                ListifyDestination.Search -> SearchScreen(notes = notes.filterNot { it.isTrashed }, onOpen = { openedNote = it })
                 ListifyDestination.Reminders -> RemindersScreen(
                     notes = notes.filterNot { it.isTrashed },
-                    onEdit = { editingNote = it },
+                    onOpen = { openedNote = it },
                     onSetReminder = { repository.setReminderTomorrow(it.id) },
                     onClearReminder = { repository.clearReminder(it.id) }
                 )
@@ -200,7 +220,7 @@ private fun ListifyTopBar(destination: ListifyDestination, notes: List<Note>, on
 @Composable
 private fun NotesScreen(
     notes: List<Note>,
-    onEdit: (Note) -> Unit,
+    onOpen: (Note) -> Unit,
     onPin: (Note) -> Unit,
     onArchive: (Note) -> Unit,
     onTrash: (Note) -> Unit
@@ -214,7 +234,7 @@ private fun NotesScreen(
         items(notes, key = { it.id }) { note ->
             NoteCard(
                 note = note,
-                onEdit = { onEdit(note) },
+                onOpen = { onOpen(note) },
                 actions = {
                     IconButton(onClick = { onPin(note) }) {
                         Icon(if (note.isPinned) Icons.Default.Star else Icons.Default.StarBorder, contentDescription = "Pin")
@@ -228,7 +248,7 @@ private fun NotesScreen(
 }
 
 @Composable
-private fun FoldersScreen(notes: List<Note>, onEdit: (Note) -> Unit) {
+private fun FoldersScreen(notes: List<Note>, onOpen: (Note) -> Unit) {
     val folders = notes.groupBy { it.folder.ifBlank { "Personal" } }.toSortedMap()
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         folders.forEach { (folder, folderNotes) ->
@@ -237,7 +257,7 @@ private fun FoldersScreen(notes: List<Note>, onEdit: (Note) -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     folderNotes.take(4).forEach { note ->
-                        CompactNoteRow(note = note, onClick = { onEdit(note) })
+                        CompactNoteRow(note = note, onClick = { onOpen(note) })
                     }
                 }
             }
@@ -246,7 +266,7 @@ private fun FoldersScreen(notes: List<Note>, onEdit: (Note) -> Unit) {
 }
 
 @Composable
-private fun SearchScreen(notes: List<Note>, onEdit: (Note) -> Unit) {
+private fun SearchScreen(notes: List<Note>, onOpen: (Note) -> Unit) {
     var query by remember { mutableStateOf("") }
     val results = notes.filter { note ->
         val haystack = "${note.title} ${note.body} ${note.folder} ${note.tags.joinToString(" ")}"
@@ -265,7 +285,7 @@ private fun SearchScreen(notes: List<Note>, onEdit: (Note) -> Unit) {
         Spacer(Modifier.height(16.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(results, key = { it.id }) { note ->
-                CompactNoteRow(note = note, onClick = { onEdit(note) })
+                CompactNoteRow(note = note, onClick = { onOpen(note) })
             }
         }
     }
@@ -274,7 +294,7 @@ private fun SearchScreen(notes: List<Note>, onEdit: (Note) -> Unit) {
 @Composable
 private fun RemindersScreen(
     notes: List<Note>,
-    onEdit: (Note) -> Unit,
+    onOpen: (Note) -> Unit,
     onSetReminder: (Note) -> Unit,
     onClearReminder: (Note) -> Unit
 ) {
@@ -289,7 +309,7 @@ private fun RemindersScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onEdit(note) }
+                        .clickable { onOpen(note) }
                         .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -361,6 +381,57 @@ private fun SettingsScreen(
         }
         if (trashed.isEmpty()) {
             item { Text("Trash is empty", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun NoteReader(note: Note, onBack: () -> Unit, onEdit: () -> Unit, onTrash: () -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(note.displayTitle) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") }
+                },
+                actions = {
+                    IconButton(onClick = onTrash) { Icon(Icons.Default.Delete, contentDescription = "Trash") }
+                    IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit") }
+                }
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            item {
+                Text(
+                    text = note.displayTitle,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = noteColor(note.color),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = note.body.ifBlank { "No markdown yet." },
+                        modifier = Modifier.padding(16.dp),
+                        fontSize = 17.sp,
+                        lineHeight = 25.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
         }
     }
 }
@@ -471,7 +542,7 @@ private fun NoteEditor(note: Note, onBack: () -> Unit, onSave: (Note) -> Unit, o
 }
 
 @Composable
-private fun NoteCard(note: Note, onEdit: () -> Unit, actions: @Composable () -> Unit) {
+private fun NoteCard(note: Note, onOpen: () -> Unit, actions: @Composable () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = noteColor(note.color)),
@@ -482,7 +553,7 @@ private fun NoteCard(note: Note, onEdit: () -> Unit, actions: @Composable () -> 
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .clickable(onClick = onEdit)
+                        .clickable(onClick = onOpen)
                 ) {
                     Text(note.displayTitle, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                     if (note.preview.isNotBlank()) {

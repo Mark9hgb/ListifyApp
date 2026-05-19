@@ -4,7 +4,9 @@
     <application
         android:name=".ListifyApp"
         android:allowBackup="false"
+        android:icon="@drawable/listify_icon"
         android:label="Listify"
+        android:roundIcon="@drawable/listify_icon"
         android:theme="@style/Theme.Listify">
         <activity
             android:name=".MainActivity"
