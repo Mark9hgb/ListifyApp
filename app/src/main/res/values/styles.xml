@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Listify" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#FFFDF8</item>
+        <item name="android:statusBarColor">#FBFAF7</item>
+    </style>
+</resources>
